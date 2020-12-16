@@ -48,6 +48,9 @@ enum ObjType
  * That is, with the list (a b c d), you'd get
  * [  a  |  &b  |  &c  |  &d  ]
  * 0     O+0P   O+P    O+2P   O+3P
+ * 
+ * Equivalent to
+ * struct Object{ enum ObjType type; Object* p[];}, or more logically char[] or void*
 */
 typedef struct Object
 {
@@ -57,9 +60,17 @@ typedef struct Object
 
 
 typedef Object *(*primop)(Object *);
-/*** Global Constants?***/
-Object *all_symbols, *top_env, *nil, *tee, *quote,
-    *s_if, *s_lambda, *s_define, *s_setb;
+/*** Global Constants***/
+Object *all_symbols,  // Global symbol table
+      *top_env,       // Top-Level
+      *nil,           // `nil` and ()
+      *tee,           // t/True
+      *quote,         // quote or '
+      *s_if,          // `If` symbol
+      *s_lambda,      // lambda symbol
+      *s_define,      // define symbol
+      *s_setb;        // set! symbol
+
 // Generate a new Cons cell from X and Y
 #define cons(X, Y) omake(CONS, 2, (X), (Y))
 // Get Car and Cdr of X
@@ -86,10 +97,13 @@ Object *all_symbols, *top_env, *nil, *tee, *quote,
 // Generate Procedure
 // With Args X, body Y, and Environment/Scope Z
 #define mkproc(X, Y, Z) omake(PROC, 3, (X), (Y), (Z))
+// get procedure args
 #define procargs(X) ((X)->p[0])
+// Get procedure body
 #define proccode(X) ((X)->p[1])
+// get procedure bindings
 #define procenv(X) ((X)->p[2])
-
+// Is symbol NIL
 #define isnil(X) ((X) == nil)
 
 // Generate a next Cons cell or linked list from
@@ -144,7 +158,7 @@ Object* intern(char *name)
 // Generates list  ((Symbol Value) Environment)
 #define extend(ENV, SYM, VAL) (cons(cons((SYM), (VAL)), (ENV)))
 /** 
- * Recursively append 
+ * Recursively append symbol/value pairs to environment ENV
 */
 Object *multiple_extend(Object* env, Object* syms, Object* vals)
 {
@@ -153,13 +167,13 @@ Object *multiple_extend(Object* env, Object* syms, Object* vals)
       extend(env, car(syms), car(vals)), 
       cdr(syms), cdr(vals));
 }
-
+// Append (Symbol, Value) pair to top_level environment
 Object *extend_top(Object *sym, Object *val)
 {
   setcdr(top_env, cons(cons(sym, val), cdr(top_env)));
   return val;
 }
-
+// Not sure what this does, gets value associated with key in invironment or returns `nil`
 Object* assoc(Object* key, Object* alist)
 {
   if (isnil(alist))
@@ -170,7 +184,7 @@ Object* assoc(Object* key, Object* alist)
 }
 
 /*** Input/Output ***/
-FILE *ifp;
+FILE* inputfile;
 char *token_la;
 int la_valid = 0;
 #define MAXLEN 100
@@ -185,7 +199,7 @@ void add_to_buf(char ch)
     buffer[bufused++] = ch;
 }
 /**
- * Turn global buffer into CString and return it
+ * Turn global buffer into CString, malloc's it, and returns it
 */
 char* buf2str()
 {
@@ -193,7 +207,7 @@ char* buf2str()
   return strdup(buffer);
 }
 // Assign current input file to FP
-void setinput(FILE *fp) { ifp = fp; }
+void setinput(FILE *fp) { inputfile = fp; }
 
 void putback_token(char *token)
 {
@@ -201,7 +215,7 @@ void putback_token(char *token)
   la_valid = 1;
 }
 
-char *gettoken()
+char* gettoken()
 {
   int ch;
 
@@ -210,20 +224,24 @@ char *gettoken()
     la_valid = 0;
     return token_la;
   }
+  // Skip to next function
   do {
-    if ((ch = getc(ifp)) == EOF)
+    if ((ch = getc(inputfile)) == EOF)
       exit(0);
   } while (isspace(ch));
+
+  // Get next character 
   add_to_buf(ch);
+  // If special character indicating quote or sexpr, dispatch to buf2str
   if (strchr("()\'", ch))
     return buf2str();
-  for (;;)
-  {
-    if ((ch = getc(ifp)) == EOF)
-      exit(0);
-    if (strchr("()\'", ch) || isspace(ch))
-    {
-      ungetc(ch, ifp);
+
+  for (;;) {
+    if ((ch = getc(inputfile)) == EOF) exit(0);
+
+    // If char is special character, or space, put the char back into the input stream (THIS WAS A THING)
+    if (strchr("()\'", ch) || isspace(ch)) {
+      ungetc(ch, inputfile);
       return buf2str();
     }
     add_to_buf(ch);
@@ -313,6 +331,9 @@ Object *evlis(Object *exps, Object *env);
 Object *progn(Object *exps, Object *env);
 Object *apply(Object *proc, Object *vals, Object *env);
 
+/**
+ * Evaluate expression in terms of env
+*/
 Object *eval(Object *exp, Object *env)
 {
   Object *tmp;
@@ -324,14 +345,15 @@ Object *eval(Object *exp, Object *env)
   {
   case INT:
     return exp;
+  
   case SYM:
     tmp = assoc(exp, env);
     if (tmp == nil)
       error("Unbound symbol");
     return cdr(tmp);
+
   case CONS:
-    if (car(exp) == s_if)
-    {
+    if (car(exp) == s_if) {
       if (eval(car(cdr(exp)), env) != nil)
         return eval(car(cdr(cdr(exp))), env);
       else
@@ -344,8 +366,8 @@ Object *eval(Object *exp, Object *env)
     if (car(exp) == s_define)
       return (extend_top(car(cdr(exp)),
                          eval(car(cdr(cdr(exp))), env)));
-    if (car(exp) == s_setb)
-    {
+
+    if (car(exp) == s_setb) {
       Object *pair = assoc(car(cdr(exp)), env);
       Object *newval = eval(car(cdr(cdr(exp))), env);
       setcdr(pair, newval);
@@ -397,7 +419,8 @@ Object *apply(Object *proc, Object *vals, Object *env)
   return nil;
 }
 
-/*** Primitives ***/
+/*** Native Functions ***/
+// (+)
 Object *prim_sum(Object *args)
 {
   int sum;
@@ -405,9 +428,8 @@ Object *prim_sum(Object *args)
     ;
   return mkint(sum);
 }
-
-Object *prim_sub(Object *args)
-{
+//(-)
+Object *prim_sub(Object *args) {
   int sum;
   for (sum = intval(car(args)), args = cdr(args);
        !isnil(args);
@@ -415,20 +437,36 @@ Object *prim_sub(Object *args)
     ;
   return mkint(sum);
 }
-
-Object *prim_prod(Object *args)
-{
+// (*)
+Object *prim_prod(Object *args) {
   int prod;
   for (prod = 1; !isnil(args); prod *= intval(car(args)), args = cdr(args))
     ;
   return mkint(prod);
 }
-
-Object *prim_numeq(Object *args)
-{
+// (=)
+Object *prim_numeq(Object *args) {
   return intval(car(args)) == intval(car(cdr(args))) ? tee : nil;
 }
-
+Object* prim_numneq(Object* args) {
+  return intval(car(args)) != intval(car(cdr(args))) ? tee : nil;
+}
+// (>)
+Object* prim_gt(Object* args){
+  return intval(car(args)) > intval(car(cdr(args))) ? tee : nil;
+}
+// (<)
+Object* prim_lt(Object* args) {
+    return intval(car(args)) < intval(car(cdr(args))) ? tee : nil;
+}
+Object* prim_ge(Object* args){
+    return intval(car(args)) >= intval(car(cdr(args))) ? tee : nil;
+}
+// (<=)
+Object* prim_le(Object* args) {
+      return intval(car(args)) <= intval(car(cdr(args))) ? tee : nil;
+}
+// Cons, Car, and CDR inline
 Object *prim_cons(Object *args) { return cons(car(args), car(cdr(args))); }
 Object *prim_car(Object *args) { return car(car(args)); }
 Object *prim_cdr(Object *args) { return cdr(car(args)); }
@@ -456,6 +494,13 @@ void init_sl3()
   extend_top(intern("-"), mkprimop(prim_sub));
   extend_top(intern("*"), mkprimop(prim_prod));
   extend_top(intern("="), mkprimop(prim_numeq));
+  // My Extensions
+  extend_top(intern(">"),  mkprimop(prim_gt));
+  extend_top(intern("<"),  mkprimop(prim_lt));
+  extend_top(intern(">="), mkprimop(prim_ge));
+  extend_top(intern("<="), mkprimop(prim_ge));
+  extend_top(intern("!="), mkprimop(prim_numneq));
+  // End my extensions
   extend_top(intern("cons"), mkprimop(prim_cons));
   extend_top(intern("car"), mkprimop(prim_car));
   extend_top(intern("cdr"), mkprimop(prim_cdr));
