@@ -3,7 +3,7 @@
 ## Overview
 This project is based on another I found. is a lisp implementation I discovered that was intending to act as an example of what a minimal lisp implementation should do.
 
-I've decided to document it's behavior, and try and expand it as much as I can.
+I've decided to document it's behavior, and try and expand it as much as I can while keeping the original format: this not meant to be a radical rewrite, but build upon the previously existing implementaiton 
 
 The original can be found here: www.sonoma.edu/users/l/luvisi/sl3.c  
 And an explanation for it here: https://wiki.c2.com/?ImplementingLisp
