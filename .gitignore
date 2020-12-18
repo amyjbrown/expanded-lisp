@@ -1,2 +1,4 @@
 lisp
+lisp.exe
+*.o
 a.out
