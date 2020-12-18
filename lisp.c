@@ -404,7 +404,7 @@ Object *progn(Object *exps, Object *env)
   }
 }
 
-Object *apply(Object *proc, Object *vals, Object *env)
+Object* apply(Object* proc, Object* vals, Object* env)
 {
   if (proc->type == PRIMOP)
     return (*primopval(proc))(vals);
@@ -421,7 +421,7 @@ Object *apply(Object *proc, Object *vals, Object *env)
 
 /*** Native Functions ***/
 // (+)
-Object *prim_sum(Object *args)
+Object* prim_sum(Object *args)
 {
   int sum;
   for (sum = 0; !isnil(args); sum += intval(car(args)), args = cdr(args))
@@ -431,6 +431,11 @@ Object *prim_sum(Object *args)
 //(-)
 Object *prim_sub(Object *args) {
   int sum;
+
+  if (!isnil(car(args))  &&  isnil(cdr(args))){
+    return mkint(0 - intval(car(args)));
+  }
+
   for (sum = intval(car(args)), args = cdr(args);
        !isnil(args);
        sum -= intval(car(args)), args = cdr(args))
