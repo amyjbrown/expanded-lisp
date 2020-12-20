@@ -131,7 +131,7 @@ Object* omake(enum ObjType type, int count, ...)
   // varags iterations
   va_start(ap, count);
   // Alocate space for |Object_1|&Object_2|&Object_3|...|&Object_count
-  result = (Object*) malloc(sizeof(Object) + (count - 1) * sizeof(Value));
+  result = (Object*) malloc(sizeof(Object) + count * sizeof(Value));
   result->type = type;
   switch (type) {
     case INT:
