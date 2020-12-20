@@ -137,13 +137,22 @@ Object* omake(enum ObjType type, int count, ...)
     case INT:
       result->data[0].number = va_arg(ap, int);
       break;
+    
     case SYM:
       result->data[0].string = va_arg(ap, char*);
       break;
+    
     case CONS:
       result->data[0].object = va_arg(ap, Object*);
       result->data[1].object = va_arg(ap, Object*);
       break;
+    
+    case PROC:
+      result->data[0].object = va_arg(ap, Object*);
+      result->data[1].object = va_arg(ap, Object*);
+      result->data[2].object = va_arg(ap, Object*);
+      break;
+
     case PRIMOP:
       result->data[0].primitive = va_arg(ap, primop);
       break;
@@ -193,7 +202,7 @@ Object *multiple_extend(Object* env, Object* syms, Object* vals)
   return isnil(syms) ? env : 
   multiple_extend(
       extend(env, car(syms), car(vals)), 
-      cdr(syms).object, cdr(vals).object);
+      cdr(syms), cdr(vals));
 }
 // Append (Symbol, Value) pair to top_level environment
 Object *extend_top(Object *sym, Object *val)
