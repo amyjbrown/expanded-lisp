@@ -52,14 +52,28 @@ enum ObjType
  * Equivalent to
  * struct Object{ enum ObjType type; Object* p[];}, or more logically char[] or void*
 */
-typedef struct Object
+// Forward declaration
+struct sObject;
+
+
+typedef struct sObject *(*primop)(struct sObject*);
+
+typedef union {
+  int number;
+  char* string;
+  struct sObject* object;
+  primop primitive;
+  // TODO rest
+} Value;
+
+
+typedef struct sObject
 {
   enum ObjType type;
-  struct Object* p[1]; // Destructures to p1: &&Object, p1: [&OBject], or p1: [[Object]] 
+  Value data[]; // Currently same trcik
 } Object;
 
 
-typedef Object *(*primop)(Object *);
 /*** Global Constants***/
 Object *all_symbols,  // Global symbol table
       *top_env,       // Top-Level
@@ -74,35 +88,35 @@ Object *all_symbols,  // Global symbol table
 // Generate a new Cons cell from X and Y
 #define cons(X, Y) omake(CONS, 2, (X), (Y))
 // Get Car and Cdr of X
-#define car(X) ((X)->p[0])
-#define cdr(X) ((X)->p[1])
+#define car(X) ((X)->data[0].object)
+#define cdr(X) ((X)->data[1].object)
 
 // Set Car/Cdr of X to Y
-#define setcar(X, Y) (((X)->p[0]) = (Y))
-#define setcdr(X, Y) (((X)->p[1]) = (Y))
+#define setcar(X, Y) (((X)->data[0].object) = (Y))
+#define setcdr(X, Y) (((X)->data[1].object) = (Y))
 // Generate INT value
-#define mkint(X) omake(INT, 1, (Object*)(X))
+#define mkint(X) omake(INT, 1, (X))
 // THIS CASTS THE VALUE OF POINTER TO OBJECT TO AN INT???
-#define intval(X) ((int)((X)->p[0]))
+#define intval(X) ((X)->data[0].number)
 
 //Make Symbol
-#define mksym(X) omake(SYM, 1, (Object*)(X))
+#define mksym(X) omake(SYM, 1, (X))
 // Cast Symbol name from object pointer
-#define symname(X) ((char *)((X)->p[0]))
+#define symname(X) (((X)->data[0].string))
 
 //Generate native function 
-#define mkprimop(X) omake(PRIMOP, 1, (Object*)(X))
-#define primopval(X) ((primop)(X)->p[0])
+#define mkprimop(X) omake(PRIMOP, 1, (X))
+#define primopval(X) ((X)->data[0].primitive)
 
 // Generate Procedure
 // With Args X, body Y, and Environment/Scope Z
 #define mkproc(X, Y, Z) omake(PROC, 3, (X), (Y), (Z))
 // get procedure args
-#define procargs(X) ((X)->p[0])
+#define procargs(X) ((X)->data[0].object)
 // Get procedure body
-#define proccode(X) ((X)->p[1])
+#define proccode(X) ((X)->data[1].object)
 // get procedure bindings
-#define procenv(X) ((X)->p[2])
+#define procenv(X) ((X)->data[2].object)
 // Is symbol NIL
 #define isnil(X) ((X) == nil)
 
@@ -113,16 +127,30 @@ Object* omake(enum ObjType type, int count, ...)
   // Result variable
   Object *result;
   va_list ap;
-  int i;
+
   // varags iterations
   va_start(ap, count);
   // Alocate space for |Object_1|&Object_2|&Object_3|...|&Object_count
-  result = (Object*) malloc(sizeof(Object) + (count - 1) * sizeof(Object *));
+  result = (Object*) malloc(sizeof(Object) + (count - 1) * sizeof(Value));
   result->type = type;
-  // For item in count - 
-  for (i = 0; i < count; i++)
-    // This will lead to the next Object, then the Next
-    result->p[i] = va_arg(ap, Object*);
+  switch (type) {
+    case INT:
+      result->data[0].number = va_arg(ap, int);
+      break;
+    case SYM:
+      result->data[0].string = va_arg(ap, char*);
+      break;
+    case CONS:
+      result->data[0].object = va_arg(ap, Object*);
+      result->data[1].object = va_arg(ap, Object*);
+      break;
+    case PRIMOP:
+      result->data[0].primitive = va_arg(ap, primop);
+      break;
+
+    default:
+      error("Not Currently Suported!");
+  }
   va_end(ap);
   
   return result;
@@ -165,7 +193,7 @@ Object *multiple_extend(Object* env, Object* syms, Object* vals)
   return isnil(syms) ? env : 
   multiple_extend(
       extend(env, car(syms), car(vals)), 
-      cdr(syms), cdr(vals));
+      cdr(syms).object, cdr(vals).object);
 }
 // Append (Symbol, Value) pair to top_level environment
 Object *extend_top(Object *sym, Object *val)
