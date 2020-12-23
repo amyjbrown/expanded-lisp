@@ -298,7 +298,7 @@ char* gettoken() {
   }
 }
 
-Object* readlist(unsigned int count);
+Object* readlist();
 
 // Reads next object (including Sexprs) from input and returns in
 // TODO gc should handle the elements gotten here, either in the return or not
@@ -308,7 +308,7 @@ Object *readobj() {
   token = gettoken();
   // If '(', start reading in Sexprs
   if (!strcmp(token, "("))
-    return readlist(0);
+    return readlist();
   // Elif "'", create a quote value with next read object
   if (!strcmp(token, "\'"))
     return cons(quote, cons(readobj(), nil)); // GC will handle this case
@@ -319,7 +319,7 @@ Object *readobj() {
   return intern(token);
 }
 
-Object* readlist(unsigned int count)
+Object* readlist()
 {
   char *token = gettoken();
   Object *tmp;
@@ -327,16 +327,16 @@ Object* readlist(unsigned int count)
   if (!strcmp(token, ")")) return nil;
 
   // TODO this is bugy and won't exit til next read object, which creates a confusing exit
-  if ((!strcmp(token, ".")) && count == 1){ // if token = "."
-    tmp = readobj();        // Read the next object
-    if (strcmp(gettoken(), ")")) error("cons cell dot format only allows 2 elements!"); // If the token after it is not ')' exit??
-    return tmp;
-  }
+  // if ((!strcmp(token, ".")) && count == 1){ // if token = "."
+  //   tmp = readobj();        // Read the next object
+  //   if (strcmp(gettoken(), ")")) error("cons cell dot format only allows 2 elements!"); // If the token after it is not ')' exit??
+  //   return tmp;
+  // }
 
   // Backtrace
   putback_token(token);
   tmp = readobj(); /* Must force evaluation order */
-  return cons(tmp, readlist(count + 1));
+  return cons(tmp, readlist());
 }
 
 void writeobj(FILE *ofp, Object *op)
@@ -429,10 +429,6 @@ Object* eval(Object *exp, Object *env) {
         Object *newval = eval(car(cdr(cdr(exp))), env);
         setcdr(pair, newval);
         return newval;
-      }
-      // Case of inline Cons cell with (a . b) 
-      if (cdr(exp)->type != CONS) {
-        
       }
 
       return apply(eval(car(exp), env), evlis(cdr(exp), env), env);
