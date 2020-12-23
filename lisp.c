@@ -33,8 +33,7 @@
 /*** TYPES ***/
 
 /*** List Structured Memory ***/
-enum ObjType
-{
+enum ObjType {
   INT,
   SYM,
   CONS,
@@ -42,27 +41,28 @@ enum ObjType
   PRIMOP
 };
 /**
- * Object
- * This is a weird one -- it works by being a tagged union and then it has a pointer to a pointer 
- * This acts as in array pointer structure that will follow the Object when allocated in memory
- * That is, with the list (a b c d), you'd get
- * [  a  |  &b  |  &c  |  &d  ]
- * 0     O+0P   O+P    O+2P   O+3P
- * 
- * Equivalent to
- * struct Object{ enum ObjType type; Object* p[];}, or more logically char[] or void*
+ * Type Object
+ * This is a tagged union with multiple members, represented by a flexible struct member -- each object-type holds between 1-3 elements
+ * Special elements like `t` and `nil` are represented by global symbols to allow for pointer comparison
 */
 // Forward declaration
 struct sObject;
 
+/**
+ * PrimOp
+ * Function pointer to a native function 
+*/
+typedef struct sObject *(*PrimOp)(struct sObject*);
 
-typedef struct sObject *(*primop)(struct sObject*);
-
+/**
+ * Value
+ * Represents any of the data types that an Object has a payload 
+*/
 typedef union {
   int number;
   char* string;
   struct sObject* object;
-  primop primitive;
+  PrimOp primitive;
   // TODO rest
 } Value;
 
@@ -84,7 +84,7 @@ Object *all_symbols,  // Global symbol table
       *s_lambda,      // lambda symbol
       *s_define,      // define symbol
       *s_setb;        // set! symbol
-
+/*** MACROS ***/
 // Generate a new Cons cell from X and Y
 #define cons(X, Y) omake(CONS, 2, (X), (Y))
 // Get Car and Cdr of X
@@ -154,7 +154,7 @@ Object* omake(enum ObjType type, int count, ...)
       break;
 
     case PRIMOP:
-      result->data[0].primitive = va_arg(ap, primop);
+      result->data[0].primitive = va_arg(ap, PrimOp);
       break;
 
     default:
@@ -194,6 +194,7 @@ Object* intern(char *name)
 /*** Environment ***/
 // Generates list  ((Symbol Value) Environment)
 #define extend(ENV, SYM, VAL) (cons(cons((SYM), (VAL)), (ENV)))
+
 /** 
  * Recursively append symbol/value pairs to environment ENV
 */
@@ -204,13 +205,15 @@ Object *multiple_extend(Object* env, Object* syms, Object* vals)
       extend(env, car(syms), car(vals)), 
       cdr(syms), cdr(vals));
 }
+
 // Append (Symbol, Value) pair to top_level environment
 Object *extend_top(Object *sym, Object *val)
 {
   setcdr(top_env, cons(cons(sym, val), cdr(top_env)));
   return val;
 }
-// Not sure what this does, gets value associated with key in invironment or returns `nil`
+
+// Recursively looks up value of key in alist which is used as a dict -- if the list if nil it returns nil 
 Object* assoc(Object* key, Object* alist)
 {
   if (isnil(alist))
@@ -226,75 +229,89 @@ char *token_la;
 int la_valid = 0;
 #define MAXLEN 100
 char buffer[MAXLEN];
-int bufused;
+int buffer_used;
 /**
  * Append character to global buffer
 */
 void add_to_buf(char ch)
 {
-  if (bufused < MAXLEN - 1)
-    buffer[bufused++] = ch;
+  if (buffer_used < MAXLEN - 1)
+    buffer[buffer_used++] = ch;
 }
 /**
  * Turn global buffer into CString, malloc's it, and returns it
 */
 char* buf2str()
 {
-  buffer[bufused++] = '\0';
+  buffer[buffer_used++] = '\0';
   return strdup(buffer);
 }
 // Assign current input file to FP
 void setinput(FILE *fp) { inputfile = fp; }
+
 
 void putback_token(char *token)
 {
   token_la = token;
   la_valid = 1;
 }
-
-char* gettoken()
-{
+// This returns a String as a char* representing the next token in the input scheme
+char* gettoken() {
   int ch;
 
-  bufused = 0;
+  // Initiates buffer size
+  buffer_used = 0;
+  // TODO I have no clue what this means
   if (la_valid) {
     la_valid = 0;
     return token_la;
   }
-  // Skip to next function
+  // Skip to next token
   do {
     if ((ch = getc(inputfile)) == EOF)
       exit(0);
   } while (isspace(ch));
 
-  // Get next character 
+  // Store next character in buffer
   add_to_buf(ch);
-  // If special character indicating quote or sexpr, dispatch to buf2str
+  // if ch is equal to special characters () or ', return them (I suppose since their one letter tokens)
   if (strchr("()\'", ch))
     return buf2str();
 
+  // Next, we are going to iteratively read in the characters of the next token
   for (;;) {
+    // Read next character into ch
+    // Exit if you reach end of Input file
     if ((ch = getc(inputfile)) == EOF) exit(0);
 
-    // If char is special character, or space, put the char back into the input stream (THIS WAS A THING)
+    // Is the next character in ch is a space or one of the special terminating characters like ' or ()
+    // Push the ch back into the input stream (so that it can be read on next pass?)
+    // And return token
     if (strchr("()\'", ch) || isspace(ch)) {
       ungetc(ch, inputfile);
       return buf2str();
     }
+    // Add that element to buffer
     add_to_buf(ch);
   }
 }
 
-Object *readlist();
-Object *readobj()
-{
-  char *token;
+Object* readlist();
+
+// Reads next object (including Sexprs) from input and returns in
+// TODO gc should handle the elements gotten here, either in the return or not
+Object *readobj() {
+  char* token;
 
   token = gettoken();
+  // If '(', start reading in Sexprs
   if (!strcmp(token, "("))
     return readlist();
+  // Elif "'", create a quote value with next read object
   if (!strcmp(token, "\'"))
-    return cons(quote, cons(readobj(), nil));
+    return cons(quote, cons(readobj(), nil)); // GC will handle this case
+  // This reads in token int
+  // TODO what is this??
   if (token[strspn(token, "0123456789")] == '\0')
     return mkint(atoi(token));
   return intern(token);
@@ -304,15 +321,17 @@ Object *readlist()
 {
   char *token = gettoken();
   Object *tmp;
+  // Handle '()' nil value
   if (!strcmp(token, ")"))
     return nil;
-  if (!strcmp(token, "."))
-  {
+    // TODO this is bugy and won't exit til next read object, which creates a confusing death
+    // I think this is meant to be an exist short circuit??
+  if (!strcmp(token, ".")){
     tmp = readobj();
-    if (strcmp(gettoken(), ")"))
-      exit(1);
+    if (strcmp(gettoken(), ")")) exit(1);
     return tmp;
   }
+
   putback_token(token);
   tmp = readobj(); /* Must force evaluation order */
   return cons(tmp, readlist());
@@ -371,69 +390,65 @@ Object *apply(Object *proc, Object *vals, Object *env);
 /**
  * Evaluate expression in terms of env
 */
-Object *eval(Object *exp, Object *env)
-{
-  Object *tmp;
+Object* eval(Object *exp, Object *env) {
+    Object* tmp;
 
-  if (exp == nil)
-    return nil;
+    if (exp == nil)
+      return nil;
 
-  switch (exp->type)
-  {
-  case INT:
-    return exp;
-  
-  case SYM:
-    tmp = assoc(exp, env);
-    if (tmp == nil)
-      error("Unbound symbol");
-    return cdr(tmp);
+    switch (exp->type){
+    case INT:
+      return exp;
+    
+    case SYM:
+      tmp = assoc(exp, env);
+      if (tmp == nil)
+        error("Unbound symbol");
+      return cdr(tmp);
 
-  case CONS:
-    if (car(exp) == s_if) {
-      if (eval(car(cdr(exp)), env) != nil)
-        return eval(car(cdr(cdr(exp))), env);
-      else
-        return eval(car(cdr(cdr(cdr(exp)))), env);
-    }
-    if (car(exp) == s_lambda)
-      return mkproc(car(cdr(exp)), cdr(cdr(exp)), env);
-    if (car(exp) == quote)
-      return car(cdr(exp));
-    if (car(exp) == s_define)
-      return (extend_top(car(cdr(exp)),
-                         eval(car(cdr(cdr(exp))), env)));
+    case CONS:
+      if (car(exp) == s_if) {
+        if (eval(car(cdr(exp)), env) != nil)
+          return eval(car(cdr(cdr(exp))), env);
+        else
+          return eval(car(cdr(cdr(cdr(exp)))), env);
+      }
 
-    if (car(exp) == s_setb) {
-      Object *pair = assoc(car(cdr(exp)), env);
-      Object *newval = eval(car(cdr(cdr(exp))), env);
-      setcdr(pair, newval);
-      return newval;
-    }
-    return apply(eval(car(exp), env), evlis(cdr(exp), env), env);
-  case PRIMOP:
-    return exp;
-  case PROC:
-    return exp;
+      if (car(exp) == s_lambda)
+        return mkproc(car(cdr(exp)), cdr(cdr(exp)), env);
+      if (car(exp) == quote)
+        return car(cdr(exp));
+      if (car(exp) == s_define)
+        return (extend_top(car(cdr(exp)),
+                          eval(car(cdr(cdr(exp))), env)));
+
+      if (car(exp) == s_setb) {
+        Object *pair = assoc(car(cdr(exp)), env);
+        Object *newval = eval(car(cdr(cdr(exp))), env);
+        setcdr(pair, newval);
+        return newval;
+      }
+      return apply(eval(car(exp), env), evlis(cdr(exp), env), env);
+    case PRIMOP:
+      return exp;
+    case PROC:
+      return exp;
   }
   /* Not reached */
   return exp;
 }
 
-Object *evlis(Object *exps, Object *env)
-{
-  if (exps == nil)
-    return nil;
+Object* evlis(Object *exps, Object *env) {
+  if (exps == nil) return nil;
+
   return cons(eval(car(exps), env),
               evlis(cdr(exps), env));
 }
 
-Object *progn(Object *exps, Object *env)
-{
+Object *progn(Object *exps, Object *env) {
   if (exps == nil)
     return nil;
-  for (;;)
-  {
+  for (;;){
     if (cdr(exps) == nil)
       return eval(car(exps), env);
     eval(car(exps), env);
@@ -441,12 +456,10 @@ Object *progn(Object *exps, Object *env)
   }
 }
 
-Object* apply(Object* proc, Object* vals, Object* env)
-{
+Object* apply(Object* proc, Object* vals, Object* env) {
   if (proc->type == PRIMOP)
     return (*primopval(proc))(vals);
-  if (proc->type == PROC)
-  {
+  if (proc->type == PROC) {
     /* For dynamic scope, use env instead of procenv(proc) */
     return progn(proccode(proc),
                  multiple_extend(procenv(proc), procargs(proc), vals));
@@ -458,8 +471,7 @@ Object* apply(Object* proc, Object* vals, Object* env)
 
 /*** Native Functions ***/
 // (+)
-Object* prim_sum(Object *args)
-{
+Object* prim_sum(Object *args) {
   int sum;
   for (sum = 0; !isnil(args); sum += intval(car(args)), args = cdr(args))
     ;
@@ -519,8 +531,7 @@ Object *prim_cdr(Object *args) { return cdr(car(args)); }
  * Add values to global symbol table
  * And assign values to 
 */
-void init_sl3()
-{
+void init_sl3() {
   nil = mksym("nil");
   all_symbols = cons(nil, nil);
   top_env = cons(cons(nil, nil), nil);
@@ -549,8 +560,7 @@ void init_sl3()
 }
 
 /*** Main Driver ***/
-int main()
-{
+int main() {
   init_sl3();
   setinput(stdin);
   for (;;)
