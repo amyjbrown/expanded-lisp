@@ -259,7 +259,7 @@ void putback_token(char *token)
 
 // This returns a String as a char* representing the next token in the input scheme
 char* gettoken() {
-  int ch;
+  char ch;
 
   // Initiates buffer size
   buffer_used = 0;
@@ -277,8 +277,15 @@ char* gettoken() {
   // Store next character in buffer
   add_to_buf(ch);
   // if ch is equal to special characters () or ', return them (I suppose since their one letter tokens)
-  if (strchr("()\'", ch))
+  if (strchr("()\'", ch)) // if ch in strchr
     return buf2str();
+  // Handle comment
+  if (ch == ';') {
+    // skip to end of line
+    do {
+      if ((ch = getc(inputfile)) == EOF) exit(0);
+    } while (ch != '\n');
+  }
 
   // Next, we are going to iteratively read in the characters of the next token
   for (;;) {
@@ -290,7 +297,7 @@ char* gettoken() {
     // Push the ch back into the input stream (so that it can be read on next pass?)
     // And return token
     if (strchr("()\'", ch) || isspace(ch)) {
-      ungetc(ch, inputfile);
+      ungetc((int) ch, inputfile);
       return buf2str();
     }
     // Add that element to buffer
