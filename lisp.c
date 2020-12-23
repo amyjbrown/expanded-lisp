@@ -326,7 +326,10 @@ Object* readlist()
   // Handle '()' nil value
   if (!strcmp(token, ")")) return nil;
 
-  // TODO this is bugy and won't exit til next read object, which creates a confusing exit
+  /**
+   * This is commentd out because I found that it simply doesn't work very well with the interpreter otherwise
+   * And I think it was originally meant to allow inline (1 . 2) cells, but I'm removing it because I don't it make sense otherwise
+  */
   // if ((!strcmp(token, ".")) && count == 1){ // if token = "."
   //   tmp = readobj();        // Read the next object
   //   if (strcmp(gettoken(), ")")) error("cons cell dot format only allows 2 elements!"); // If the token after it is not ')' exit??
