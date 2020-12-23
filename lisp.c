@@ -225,8 +225,8 @@ Object* assoc(Object* key, Object* alist)
 
 /*** Input/Output ***/
 FILE* inputfile;
-char *token_la;
-int la_valid = 0;
+char *token_last;
+int last_valid = 0;
 #define MAXLEN 100
 char buffer[MAXLEN];
 int buffer_used;
@@ -249,11 +249,12 @@ char* buf2str()
 // Assign current input file to FP
 void setinput(FILE *fp) { inputfile = fp; }
 
-
+// Backtracking
+// By pushing back one token
 void putback_token(char *token)
 {
-  token_la = token;
-  la_valid = 1;
+  token_last = token;
+  last_valid = 1;
 }
 
 // This returns a String as a char* representing the next token in the input scheme
@@ -263,9 +264,9 @@ char* gettoken() {
   // Initiates buffer size
   buffer_used = 0;
   // TODO I have no clue what this means
-  if (la_valid) {
-    la_valid = 0;
-    return token_la;
+  if (last_valid) {
+    last_valid = 0;
+    return token_last;
   }
   // Skip to next token
   do {
@@ -318,21 +319,21 @@ Object *readobj() {
   return intern(token);
 }
 
-Object *readlist()
+Object* readlist()
 {
   char *token = gettoken();
   Object *tmp;
   // Handle '()' nil value
-  if (!strcmp(token, ")"))
-    return nil;
-    // TODO this is bugy and won't exit til next read object, which creates a confusing death
-    // I think this is meant to be an exist short circuit??
-  if (!strcmp(token, ".")){
-    tmp = readobj();
-    if (strcmp(gettoken(), ")")) exit(1);
+  if (!strcmp(token, ")")) return nil;
+
+  // TODO this is bugy and won't exit til next read object, which creates a confusing exit
+  if (!strcmp(token, ".")){ // if token = "."
+    tmp = readobj();        // Read the next object
+    if (strcmp(gettoken(), ")")) exit(1); // If the token after it is not ')' exit??
     return tmp;
   }
 
+  // Backtrace
   putback_token(token);
   tmp = readobj(); /* Must force evaluation order */
   return cons(tmp, readlist());
