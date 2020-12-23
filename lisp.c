@@ -274,18 +274,21 @@ char* gettoken() {
       exit(0);
   } while (isspace(ch));
 
-  // Store next character in buffer
-  add_to_buf(ch);
-  // if ch is equal to special characters () or ', return them (I suppose since their one letter tokens)
-  if (strchr("()\'", ch)) // if ch in strchr
-    return buf2str();
   // Handle comment
   if (ch == ';') {
     // skip to end of line
     do {
       if ((ch = getc(inputfile)) == EOF) exit(0);
     } while (ch != '\n');
+    
   }
+
+  // Store next character in buffer
+  add_to_buf(ch);
+  // if ch is equal to special characters () or ', return them (I suppose since their one letter tokens)
+  if (strchr("()\'", ch)) // if ch in strchr
+    return buf2str();
+
 
   // Next, we are going to iteratively read in the characters of the next token
   for (;;) {
