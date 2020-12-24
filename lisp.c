@@ -257,9 +257,24 @@ void putback_token(char *token)
   last_valid = 1;
 }
 
+/**
+ * Retrieve next caracter, ignoring comments
+*/
+int nextchar() {
+  int ch;
+  ch = getc(inputfile);
+  if (ch == ';') {
+    do {
+      ch = getc(inputfile);
+      // if either \n or EOF is found, then break;
+    } while (ch != '\n' && ch != EOF);
+  }
+
+  return ch;
+}
 // This returns a String as a char* representing the next token in the input scheme
 char* gettoken() {
-  char ch;
+  int ch;
 
   // Initiates buffer size
   buffer_used = 0;
@@ -270,18 +285,9 @@ char* gettoken() {
   }
   // Skip to next token
   do {
-    if ((ch = getc(inputfile)) == EOF)
+    if ((ch = nextchar()) == EOF)
       exit(0);
   } while (isspace(ch));
-
-  // Handle comment
-  if (ch == ';') {
-    // skip to end of line
-    do {
-      if ((ch = getc(inputfile)) == EOF) exit(0);
-    } while (ch != '\n');
-    
-  }
 
   // Store next character in buffer
   add_to_buf(ch);
@@ -294,7 +300,7 @@ char* gettoken() {
   for (;;) {
     // Read next character into ch
     // Exit if you reach end of Input file
-    if ((ch = getc(inputfile)) == EOF) exit(0);
+    if ((ch = nextchar()) == EOF) exit(0);
 
     // Is the next character in ch is a space or one of the special terminating characters like ' or ()
     // Push the ch back into the input stream (so that it can be read on next pass?)
