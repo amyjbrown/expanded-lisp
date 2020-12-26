@@ -87,10 +87,12 @@ Object *all_symbols,  // Global symbol table
       *s_setb;        // set! symbol
 /*** MACROS ***/
 //Wrapper for debugging allocations
+#ifdef DEBUG_SHOW_ALLOC
 #define omake(...) ( \
       printf("\033[0;32mAllocating object #%03d in %s[%d]\033[0m\n", global_counter++,__func__, __LINE__), \
       omake_function(__VA_ARGS__)\
 )
+#endif
 
 // Generate a new Cons cell from X and Y
 #define cons(X, Y) omake(CONS, 2, (X), (Y))
@@ -129,7 +131,11 @@ Object *all_symbols,  // Global symbol table
 
 // Generate a next Cons cell or linked list from
 // list of Objects
+#ifdef DEBUG_SHOW_ALLOC
 Object* omake_function(enum ObjType type, int count, ...)
+#else 
+Object* omake_function(enum ObjType type, int count, ...)
+#endif
 {
   // Result variable
   Object *result;
