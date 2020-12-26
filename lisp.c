@@ -75,6 +75,7 @@ typedef struct sObject
 
 
 /*** Global Constants***/
+unsigned int global_counter = 0;
 Object *all_symbols,  // Global symbol table
       *top_env,       // Top-Level
       *nil,           // `nil` and ()
@@ -85,6 +86,12 @@ Object *all_symbols,  // Global symbol table
       *s_define,      // define symbol
       *s_setb;        // set! symbol
 /*** MACROS ***/
+//Wrapper for debugging allocations
+#define omake(...) ( \
+      printf("\033[0;32mAllocating object #%03d in %s[%d]\033[0m\n", global_counter++,__func__, __LINE__), \
+      omake_function(__VA_ARGS__)\
+)
+
 // Generate a new Cons cell from X and Y
 #define cons(X, Y) omake(CONS, 2, (X), (Y))
 // Get Car and Cdr of X
@@ -122,7 +129,7 @@ Object *all_symbols,  // Global symbol table
 
 // Generate a next Cons cell or linked list from
 // list of Objects
-Object* omake(enum ObjType type, int count, ...)
+Object* omake_function(enum ObjType type, int count, ...)
 {
   // Result variable
   Object *result;
