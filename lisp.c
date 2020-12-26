@@ -70,11 +70,23 @@ typedef union {
 typedef struct sObject
 {
   enum ObjType type;
+  char marked;
+  struct sObject* next;
   Value data[]; // Currently same trcik
 } Object;
 
 
 /*** Global Constants***/
+#define STACK_MAX 256
+#define MAX_OBJECTS 200
+struct {
+    Object* first; // Tail of free list
+    unsigned int allocated; // currently allocated objects
+    unsigned int stack_len;
+    Object* stack[STACK_MAX]; // Roots for garbage Collector
+} GC;
+
+
 unsigned int global_counter = 0;
 Object *all_symbols,  // Global symbol table
       *top_env,       // Top-Level
@@ -146,6 +158,10 @@ Object* omake_function(enum ObjType type, int count, ...)
   // Alocate space for |Object_1|&Object_2|&Object_3|...|&Object_count
   result = (Object*) malloc(sizeof(Object) + count * sizeof(Value));
   result->type = type;
+  result->marked = 0;
+  // Grow free list by appending this to head
+  result->next = GC.first;
+  GC.first = result;
   switch (type) {
     case INT:
       result->data[0].number = va_arg(ap, int);
@@ -177,6 +193,18 @@ Object* omake_function(enum ObjType type, int count, ...)
   
   return result;
 }
+/**
+ * Frees currently selected object
+*/
+void freeObject(Object* object){
+    // Free the character data allocated in the heap with symbols, and later strings
+    if (object->type = SYM)
+        free(symname(object));
+
+    free(object); // DO NOT FREE object it refers to, that's handled by gc
+}
+
+
 /**Lookup symbol value from global table list
  * Returns nil if not found
 */
@@ -235,6 +263,61 @@ Object* lookup(Object* key, Object* alist)
     return car(alist);
   return lookup(key, cdr(alist));
 }
+
+/*** Garbage Collection***/
+Object* push(Object*);
+Object* pop(); // TODO should this return void
+
+void mark(Object* object){
+    if (object->marked) return;
+    
+    switch(object->type) {
+        case INT:
+        case SYM:
+        case PRIMOP:
+            object->marked = 1;
+            return;
+
+        case CONS:
+            object->marked = 1;
+            mark(car(object));
+            mark(cdr(object));
+            return;
+
+        case PROC:
+            object->marked = 1;
+            mark(procargs(object));
+            mark(proccode(object));
+            mark(procenv(object));
+            return;
+
+    }
+}
+
+/**
+ * Sweeps through and 
+*/
+void sweep() {
+    Object** object = GC.first;
+    while (*object != NULL) { // For object in free list
+        if (! (*object)->marked) {
+        // If object is unmarked, remove object and free it
+            Object* unreached = *object;
+            *object = unreached->next;
+
+            freeObject(unreached);
+        } else{
+            // Object is reached, so unmark it for next collection
+            (*object)->marked = 0;
+            object = &(*object)->next; // move to next object
+        }
+    }
+}
+
+/**
+ * Walks entire stack and marks all of them
+*/
+void markAll();
 
 /*** Input/Output ***/
 //Current inputfile, normally stdin
@@ -595,31 +678,36 @@ Object *prim_cdr(Object *args) { return cdr(car(args)); }
  * And assign values to 
 */
 void init_sl3() {
-  nil = mksym("nil");
-  all_symbols = cons(nil, nil);
-  top_env = cons(cons(nil, nil), nil);
-  tee = intern("t");
-  extend_top(tee, tee);
-  quote = intern("quote");
-  s_if = intern("if");
-  s_lambda = intern("lambda");
-  s_define = intern("define");
-  s_setb = intern("set!");
+    GC.first = NULL;
+    GC.allocated = 0;
+    GC.stack_len = 0;
+    memset(GC.stack, 0, sizeof GC.stack); // This is safe since comptime size
+    
+    nil = mksym("nil");
+    all_symbols = cons(nil, nil);
+    top_env = cons(cons(nil, nil), nil);
+    tee = intern("t");
+    extend_top(tee, tee);
+    quote = intern("quote");
+    s_if = intern("if");
+    s_lambda = intern("lambda");
+    s_define = intern("define");
+    s_setb = intern("set!");
 
-  extend_top(intern("+"), mkprimop(prim_sum));
-  extend_top(intern("-"), mkprimop(prim_sub));
-  extend_top(intern("*"), mkprimop(prim_prod));
-  extend_top(intern("="), mkprimop(prim_numeq));
-  // My Extensions
-  extend_top(intern(">"),  mkprimop(prim_gt));
-  extend_top(intern("<"),  mkprimop(prim_lt));
-  extend_top(intern(">="), mkprimop(prim_ge));
-  extend_top(intern("<="), mkprimop(prim_ge));
-  extend_top(intern("!="), mkprimop(prim_numneq));
-  // End my extensions
-  extend_top(intern("cons"), mkprimop(prim_cons));
-  extend_top(intern("car"), mkprimop(prim_car));
-  extend_top(intern("cdr"), mkprimop(prim_cdr));
+    extend_top(intern("+"), mkprimop(prim_sum));
+    extend_top(intern("-"), mkprimop(prim_sub));
+    extend_top(intern("*"), mkprimop(prim_prod));
+    extend_top(intern("="), mkprimop(prim_numeq));
+    // My Extensions
+    extend_top(intern(">"),  mkprimop(prim_gt));
+    extend_top(intern("<"),  mkprimop(prim_lt));
+    extend_top(intern(">="), mkprimop(prim_ge));
+    extend_top(intern("<="), mkprimop(prim_ge));
+    extend_top(intern("!="), mkprimop(prim_numneq));
+    // End my extensions
+    extend_top(intern("cons"), mkprimop(prim_cons));
+    extend_top(intern("car"), mkprimop(prim_car));
+    extend_top(intern("cdr"), mkprimop(prim_cdr));
 }
 
 /*** Main Driver ***/
