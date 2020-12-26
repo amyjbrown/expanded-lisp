@@ -17,6 +17,9 @@ lisp.o: lisp.c
 clean:
 	rm -f *.o *.out
 
+refresh: clean
+	rm -f lisp lisp.exe
+
 
 .SUFFIXES: .c .o
 
