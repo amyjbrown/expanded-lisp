@@ -198,51 +198,55 @@ Object* intern(char *name)
 /** 
  * Recursively append symbol/value pairs to environment ENV
 */
-Object *multiple_extend(Object* env, Object* syms, Object* vals)
+Object *multiple_extend(Object* environment, Object* symbols, Object* values)
 {
-  return isnil(syms) ? env : 
+  return isnil(symbols) ? environment : 
   multiple_extend(
-      extend(env, car(syms), car(vals)), 
-      cdr(syms), cdr(vals));
+      extend(environment, car(symbols), car(values)), 
+      cdr(symbols), cdr(values));
 }
 
 // Append (Symbol, Value) pair to top_level environment
-Object *extend_top(Object *sym, Object *val)
+Object *extend_top(Object* symbol, Object* values)
 {
-  setcdr(top_env, cons(cons(sym, val), cdr(top_env)));
-  return val;
+  setcdr(top_env, cons(cons(symbol, values), cdr(top_env)));
+  return values;
 }
 
 // Recursively looks up value of key in alist which is used as a dict -- if the list if nil it returns nil 
-Object* assoc(Object* key, Object* alist)
+Object* lookup(Object* key, Object* alist)
 {
   if (isnil(alist))
     return nil;
   if (car(car(alist)) == key)
     return car(alist);
-  return assoc(key, cdr(alist));
+  return lookup(key, cdr(alist));
 }
 
 /*** Input/Output ***/
+//Current inputfile, normally stdin
 FILE* inputfile;
+// token_last is the last token, last_valid is set if a token has been pushed into token_last
+// Used for backtracking when checking for end of list
 char *token_last;
 int last_valid = 0;
+// Buffer here is used for storing strings beforing their heap allocated as tokens (for parsing) or symbols
 #define MAXLEN 100
 char buffer[MAXLEN];
+// Number of characters in buffer, used for allocation
 int buffer_used;
 /**
  * Append character to global buffer
 */
-void add_to_buf(char ch)
-{
+void add_to_buf(char ch) {
   if (buffer_used < MAXLEN - 1)
     buffer[buffer_used++] = ch;
 }
+
 /**
  * Turn global buffer into CString, malloc's it, and returns it
 */
-char* buf2str()
-{
+char* buf2str() {
   buffer[buffer_used++] = '\0';
   return strdup(buffer);
 }
@@ -251,8 +255,7 @@ void setinput(FILE *fp) { inputfile = fp; }
 
 // Backtracking
 // By pushing back one token
-void putback_token(char *token)
-{
+void putback_token(char *token) {
   token_last = token;
   last_valid = 1;
 }
@@ -404,70 +407,88 @@ void writeobj(FILE *ofp, Object *op)
 }
 
 /*** Evaluator (Eval/Apply) ***/
-Object *evlis(Object *exps, Object *env);
-Object *progn(Object *exps, Object *env);
+Object *eval_list(Object *exps, Object *env);
+Object *eval_many(Object *exps, Object *env);
 Object *apply(Object *proc, Object *vals, Object *env);
 
 /**
- * Evaluate expression in terms of env
+ * Evaluate `expression` in terms of `environment`
+ * note `environment` is almost always top_level
 */
-Object* eval(Object *exp, Object *env) {
+Object* eval(Object *expression, Object *environment) {
     Object* tmp;
 
-    if (exp == nil)
+    if (expression == nil)
       return nil;
 
-    switch (exp->type){
+    switch (expression->type){
     case INT:
-      return exp;
+      return expression;
     
     case SYM:
-      tmp = assoc(exp, env);
+      tmp = lookup(expression, environment);
       if (tmp == nil)
         error("Unbound symbol");
       return cdr(tmp);
 
     case CONS:
-      if (car(exp) == s_if) {
-        if (eval(car(cdr(exp)), env) != nil)
-          return eval(car(cdr(cdr(exp))), env);
+      if (car(expression) == s_if) {
+        if (eval(car(cdr(expression)), environment) != nil)
+          return eval(car(cdr(cdr(expression))), environment);
         else
-          return eval(car(cdr(cdr(cdr(exp)))), env);
+          return eval(car(cdr(cdr(cdr(expression)))), environment);
       }
+    // Generate a lambda value
+      if (car(expression) == s_lambda)
+        return mkproc(
+            car(cdr(expression)), // Parameters
+            cdr(cdr(expression)), // 
+            environment);
 
-      if (car(exp) == s_lambda)
-        return mkproc(car(cdr(exp)), cdr(cdr(exp)), env);
-      if (car(exp) == quote)
-        return car(cdr(exp));
-      if (car(exp) == s_define)
-        return (extend_top(car(cdr(exp)),
-                          eval(car(cdr(cdr(exp))), env)));
+    // Return value of quote
+      if (car(expression) == quote)
+        return car(cdr(expression));
+    // Set global value of symbol
+      if (car(expression) == s_define)
+        return (extend_top(car(cdr(expression)),
+                          eval(car(cdr(cdr(expression))), environment)));
 
-      if (car(exp) == s_setb) {
-        Object *pair = assoc(car(cdr(exp)), env);
-        Object *newval = eval(car(cdr(cdr(exp))), env);
-        setcdr(pair, newval);
+      if (car(expression) == s_setb) {
+        Object* name = lookup(car(cdr(expression)), environment);
+        Object* newval = eval(car(cdr(cdr(expression))), environment);
+        setcdr(name, newval);
         return newval;
       }
-
-      return apply(eval(car(exp), env), evlis(cdr(exp), env), env);
+    // If no special forms detected
+    // Evaluate it as a procedure call
+      return apply(
+          eval(car(expression), environment), 
+          eval_list(cdr(expression), environment), 
+          environment);
     case PRIMOP:
-      return exp;
+      return expression;
     case PROC:
-      return exp;
+      return expression;
   }
   /* Not reached */
-  return exp;
+  return expression;
 }
+/**
+ * Evaluates all of the objects in a list and returns a list of their results
+ * e.g. (s1 s2 s3) => (1 2 3) if s1=1, s2=2 and s3=3
+*/
+Object* eval_list(Object *expressions, Object *environment) {
+  if (expressions == nil) return nil;
 
-Object* evlis(Object *exps, Object *env) {
-  if (exps == nil) return nil;
-
-  return cons(eval(car(exps), env),
-              evlis(cdr(exps), env));
+  return cons(eval(car(expressions), environment),
+              eval_list(cdr(expressions), environment));
 }
-
-Object *progn(Object *exps, Object *env) {
+/**
+ * Eval multiple expressions, and returns the last one, used for evaluaty lambda body expressions
+ * Equivalent to `progn` special form
+ * See https://www.gnu.org/software/emacs/manual/html_node/eintr/progn.html
+*/
+Object* eval_many(Object *exps, Object *env) {
   if (exps == nil)
     return nil;
   for (;;){
@@ -477,14 +498,21 @@ Object *progn(Object *exps, Object *env) {
     exps = cdr(exps);
   }
 }
-
-Object* apply(Object* proc, Object* vals, Object* env) {
-  if (proc->type == PRIMOP)
-    return (*primopval(proc))(vals);
-  if (proc->type == PROC) {
+/**
+ * Apply procedure to arguements in terms of environment 
+*/
+Object* apply(Object* procedure, Object* arguements, Object* environment) {
+  // Curious, if the function is a builtin, env is not passed to it -- I wonder why?
+  if (procedure->type == PRIMOP)
+    return (*primopval(procedure))(arguements);
+  // 
+  if (procedure->type == PROC) {
     /* For dynamic scope, use env instead of procenv(proc) */
-    return progn(proccode(proc),
-                 multiple_extend(procenv(proc), procargs(proc), vals));
+    return eval_many(proccode(procedure),
+                 multiple_extend(procenv(procedure), 
+                                  procargs(procedure), 
+                                  arguements)
+                  );
   }
   error("Bad argument to apply");
   /* Not reached */
