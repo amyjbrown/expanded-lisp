@@ -21,6 +21,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <ctype.h>
+#include <assert.h>
 
 /** Error Return Macro**/
 
@@ -146,7 +147,7 @@ Object *all_symbols,  // Global symbol table
 #ifdef DEBUG_SHOW_ALLOC
 Object* omake_function(enum ObjType type, int count, ...)
 #else 
-Object* omake_function(enum ObjType type, int count, ...)
+Object* omake(enum ObjType type, int count, ...)
 #endif
 {
   // Result variable
@@ -265,9 +266,19 @@ Object* lookup(Object* key, Object* alist)
 }
 
 /*** Garbage Collection***/
-Object* push(Object*);
-Object* pop(); // TODO should this return void
+Object* push(Object* object) {
+    assert(GC.stack_len < STACK_MAX);
+    GC.stack[GC.stack_len] = object; 
+    GC.stack_len++;
+}
 
+Object* pop(){
+    assert(GC.stack_len > 0);
+    return GC.stack[--GC.stack_len];
+}
+/**
+ * 
+*/
 void mark(Object* object){
     if (object->marked) return;
     
@@ -293,9 +304,17 @@ void mark(Object* object){
 
     }
 }
+/**
+ * Marks all object in the stack
+*/
+void markAll(){
+    for (int i = 0; i < GC.stack_len; i ++) {
+        mark(GC.stack[i]);
+    }
+}
 
 /**
- * Sweeps through and 
+ * Sweeps through freelist, free any unmarked objects 
 */
 void sweep() {
     Object** object = GC.first;
@@ -304,8 +323,8 @@ void sweep() {
         // If object is unmarked, remove object and free it
             Object* unreached = *object;
             *object = unreached->next;
-
             freeObject(unreached);
+            GC.allocated--;
         } else{
             // Object is reached, so unmark it for next collection
             (*object)->marked = 0;
@@ -313,11 +332,13 @@ void sweep() {
         }
     }
 }
-
 /**
- * Walks entire stack and marks all of them
+ * Run garbage collection proccess
 */
-void markAll();
+void collect_garabage(){
+    markAll();
+    sweep();
+}
 
 /*** Input/Output ***/
 //Current inputfile, normally stdin
