@@ -268,6 +268,10 @@ Object* lookup(Object* key, Object* alist)
 }
 
 /*** Garbage Collection***/
+void freeStack() {
+  memset(GC.stack, 0, sizeof GC.stack);
+}
+
 Object* push(Object* object) {
     assert(GC.stack_len < STACK_MAX);
     GC.stack[GC.stack_len] = object; 
@@ -749,6 +753,9 @@ int main() {
   {
     writeobj(stdout, eval(readobj(), top_env));
     printf("\n");
+    markAll();
+    if (GC.allocated > MAX_OBJECTS) sweep();
+    freeStack();
   }
   return 0;
 }
