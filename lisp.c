@@ -272,6 +272,8 @@ Object* lookup(Object* key, Object* alist)
 }
 
 /*** Garbage Collection***/
+void writeobj(FILE *ofp, Object *op);
+
 void freeStack() {
   printf(CL_GREEN "Resetting Stack\n" CL_END);
   memset(GC.stack, 0, sizeof GC.stack);
@@ -335,8 +337,10 @@ void markAll(){
 
   printf("\033[0;32m Begginging to mark the stack!\033[0m\n");
   for (unsigned int i = 0U; i < GC.stack_len; i ++) {
-    printf(CL_GREEN "  Marking stack object #%u/%d:" CL_YELLOW " $%p" CL_GREEN ".\n" CL_END, 
+    printf(CL_GREEN "  Marking stack object #%u/%d:" CL_YELLOW " $%p" CL_GREEN " : ", 
             i, GC.stack_len, (void*) GC.stack[i]);
+    writeobj(stdout, GC.stack[i]);
+    printf(CL_END "\n");
     mark(GC.stack[i]);
   }
   printf("\033[0;32m Ending marking!\033[0m\n");
@@ -351,16 +355,20 @@ void sweep() {
   while (*object != NULL) { // For object in free list
     if (! (*object)->marked) {
     // If object is unmarked, remove object and free it
-      printf(CL_GREEN "  Object" CL_YELLOW " $%p" CL_GREEN "is unmarked, freeing.", 
+      printf(CL_GREEN "  Freeing unmarked object" CL_YELLOW " $%p" CL_GREEN " : ", 
               (void*) *object);
+      writeobj(stdout, *object);
+      printf(CL_END "\n");
       Object* unreached = *object;
       *object = unreached->next;
       free(unreached); // Removed handling the case of the symbol representation
       GC.allocated--;
     } else {
       // Object is reached, so unmark it for next collection
-      printf(CL_GREEN "  Object" CL_YELLOW " $%p" CL_GREEN " is marked.", 
+      printf(CL_GREEN "  Ignoring marked  object" CL_YELLOW " $%p" CL_GREEN " : ", 
             (void*) *object);
+      writeobj(stdout, *object);
+      printf(CL_END "\n");
       (*object)->marked = 0;
       object = &(*object)->next; // move to next object
     }
