@@ -31,6 +31,10 @@
     fprintf(stderr, "%s\n", X); \
     exit(1);                    \
   } while (0)
+
+#define CL_GREEN "\033[0;32m"
+#define CL_YELLOW "\033[0;33m"
+#define CL_END    "\033[0m"
 /*** TYPES ***/
 
 /*** List Structured Memory ***/
@@ -100,7 +104,7 @@ Object *all_symbols,  // Global symbol table
       *s_setb;        // set! symbol
 /*** MACROS ***/
 //Wrapper for debugging allocations
-#define DEBUG_SHOW_ALLOC
+// #define DEBUG_SHOW_ALLOC
 #ifdef DEBUG_SHOW_ALLOC
 #define omake(...) ( \
       printf("\033[0;32mAllocating object #%03d in %s[%d]\033[0m\n", global_counter++,__func__, __LINE__), \
@@ -269,7 +273,9 @@ Object* lookup(Object* key, Object* alist)
 
 /*** Garbage Collection***/
 void freeStack() {
+  printf(CL_GREEN "Resetting Stack\n" CL_END);
   memset(GC.stack, 0, sizeof GC.stack);
+  GC.stack_len = 0;
 }
 
 Object* push(Object* object) {
@@ -315,36 +321,63 @@ void mark(Object* object){
  * Marks all object in the stack
 */
 void markAll(){
-    for (unsigned int i = 0U; i < GC.stack_len; i ++) {
-        mark(GC.stack[i]);
-    }
+  printf("\033[0;32m Marking Global Envrionment\033[0m\n");
+  mark(all_symbols);
+  mark(top_env);
+  printf("\033[0;32m Marking Global Constants\033[0m\n");
+  mark(tee);
+  mark(nil);
+  mark(s_define); 
+  mark(s_if); 
+  mark(s_lambda);
+  mark(s_setb);
+  mark(quote);
+
+  printf("\033[0;32m Begginging to mark the stack!\033[0m\n");
+  for (unsigned int i = 0U; i < GC.stack_len; i ++) {
+    printf(CL_GREEN "  Marking stack object #%u/%d:" CL_YELLOW " $%p" CL_GREEN ".\n" CL_END, 
+            i, GC.stack_len, (void*) GC.stack[i]);
+    mark(GC.stack[i]);
+  }
+  printf("\033[0;32m Ending marking!\033[0m\n");
 }
 
 /**
  * Sweeps through freelist, free any unmarked objects 
 */
 void sweep() {
-    Object** object = &GC.first;
-    while (*object != NULL) { // For object in free list
-        if (! (*object)->marked) {
-        // If object is unmarked, remove object and free it
-            Object* unreached = *object;
-            *object = unreached->next;
-            freeObject(unreached);
-            GC.allocated--;
-        } else{
-            // Object is reached, so unmark it for next collection
-            (*object)->marked = 0;
-            object = &(*object)->next; // move to next object
-        }
+  Object** object = &GC.first;
+  printf("\033[0;32m Beggining sweep!\033[0m\n");
+  while (*object != NULL) { // For object in free list
+    if (! (*object)->marked) {
+    // If object is unmarked, remove object and free it
+      printf(CL_GREEN "  Object" CL_YELLOW " $%p" CL_GREEN "is unmarked, freeing.", 
+              (void*) *object);
+      Object* unreached = *object;
+      *object = unreached->next;
+      free(unreached); // Removed handling the case of the symbol representation
+      GC.allocated--;
+    } else {
+      // Object is reached, so unmark it for next collection
+      printf(CL_GREEN "  Object" CL_YELLOW " $%p" CL_GREEN " is marked.", 
+            (void*) *object);
+      (*object)->marked = 0;
+      object = &(*object)->next; // move to next object
     }
+    printf(CL_GREEN" Moving to" CL_YELLOW " $%p" CL_GREEN "...\n" CL_END, 
+          (void*) *object);
+
+  }
+  printf("\033[0;32m Ending sweep!\033[0m\n");
 }
 /**
  * Run garbage collection proccess
 */
 void collect_garabage(){
+    printf("\033[0;32mEntering Garbage Collection!\033[0m\n");
     markAll();
     sweep();
+    printf("\033[0;32mExiting Garbage Collection!\033[0m\n");
 }
 
 /*** Input/Output ***/
@@ -753,8 +786,7 @@ int main() {
   {
     writeobj(stdout, eval(readobj(), top_env));
     printf("\n");
-    markAll();
-    if (GC.allocated > MAX_OBJECTS) sweep();
+    collect_garabage();
     freeStack();
   }
   return 0;
