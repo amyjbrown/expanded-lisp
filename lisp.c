@@ -64,7 +64,7 @@ typedef union {
   char* string;
   struct sObject* object;
   PrimOp primitive;
-  // TODO rest
+  // TODO: rest
 } Value;
 
 
@@ -100,6 +100,7 @@ Object *all_symbols,  // Global symbol table
       *s_setb;        // set! symbol
 /*** MACROS ***/
 //Wrapper for debugging allocations
+#define DEBUG_SHOW_ALLOC
 #ifdef DEBUG_SHOW_ALLOC
 #define omake(...) ( \
       printf("\033[0;32mAllocating object #%03d in %s[%d]\033[0m\n", global_counter++,__func__, __LINE__), \
@@ -144,6 +145,7 @@ Object *all_symbols,  // Global symbol table
 
 // Generate a next Cons cell or linked list from
 // list of Objects
+
 #ifdef DEBUG_SHOW_ALLOC
 Object* omake_function(enum ObjType type, int count, ...)
 #else 
@@ -199,7 +201,7 @@ Object* omake(enum ObjType type, int count, ...)
 */
 void freeObject(Object* object){
     // Free the character data allocated in the heap with symbols, and later strings
-    if (object->type = SYM)
+    if (object->type == SYM)
         free(symname(object));
 
     free(object); // DO NOT FREE object it refers to, that's handled by gc
@@ -270,6 +272,7 @@ Object* push(Object* object) {
     assert(GC.stack_len < STACK_MAX);
     GC.stack[GC.stack_len] = object; 
     GC.stack_len++;
+    return object;
 }
 
 Object* pop(){
@@ -308,7 +311,7 @@ void mark(Object* object){
  * Marks all object in the stack
 */
 void markAll(){
-    for (int i = 0; i < GC.stack_len; i ++) {
+    for (unsigned int i = 0U; i < GC.stack_len; i ++) {
         mark(GC.stack[i]);
     }
 }
@@ -317,7 +320,7 @@ void markAll(){
  * Sweeps through freelist, free any unmarked objects 
 */
 void sweep() {
-    Object** object = GC.first;
+    Object** object = &GC.first;
     while (*object != NULL) { // For object in free list
         if (! (*object)->marked) {
         // If object is unmarked, remove object and free it
@@ -436,23 +439,28 @@ char* gettoken() {
 
 Object* readlist();
 
-// Reads next object (including Sexprs) from input and returns in
-// TODO gc should handle the elements gotten here, either in the return or not
+/** Reads next object (including Sexprs) from input and returns in
+ * TODO: gc should handle the elements gotten here, either in the return or not
+*/
 Object *readobj() {
   char* token;
 
   token = gettoken();
   // If '(', start reading in Sexprs
-  if (!strcmp(token, "("))
-    return readlist();
-  // Elif "'", create a quote value with next read object
-  if (!strcmp(token, "\'"))
-    return cons(quote, cons(readobj(), nil)); // GC will handle this case
-  // This reads in token int
+  if (!strcmp(token, "(")) {    
+    return readlist(); // This value is already push()ed in readlist()
+  }  // Elif "'", create a quote value with next read object
+  
+  if (!strcmp(token, "\'")) {
+    return push(cons(quote, cons(readobj(), nil))); // GC will handle this case
+  }  // This reads in token int
   // TODO what is this??
-  if (token[strspn(token, "0123456789")] == '\0')
-    return mkint(atoi(token));
-  return intern(token);
+  
+  if (token[strspn(token, "0123456789")] == '\0') {
+    return push(mkint(atoi(token)));
+  }
+  
+  return push(intern(token));
 }
 
 Object* readlist()
@@ -475,7 +483,7 @@ Object* readlist()
   // Backtrace
   putback_token(token);
   tmp = readobj(); /* Must force evaluation order */
-  return cons(tmp, readlist());
+  return push(cons(tmp, readlist()));
 }
 
 void writeobj(FILE *ofp, Object *op)
@@ -557,10 +565,10 @@ Object* eval(Object *expression, Object *environment) {
       }
     // Generate a lambda value
       if (car(expression) == s_lambda)
-        return mkproc(
+        return push(mkproc(
             car(cdr(expression)), // Parameters
             cdr(cdr(expression)), // 
-            environment);
+            environment));
 
     // Return value of quote
       if (car(expression) == quote)
@@ -593,12 +601,13 @@ Object* eval(Object *expression, Object *environment) {
 /**
  * Evaluates all of the objects in a list and returns a list of their results
  * e.g. (s1 s2 s3) => (1 2 3) if s1=1, s2=2 and s3=3
+ * TODO: 
 */
 Object* eval_list(Object *expressions, Object *environment) {
   if (expressions == nil) return nil;
 
-  return cons(eval(car(expressions), environment),
-              eval_list(cdr(expressions), environment));
+  return push(cons(eval(car(expressions), environment),
+              eval_list(cdr(expressions), environment)));
 }
 /**
  * Eval multiple expressions, and returns the last one, used for evaluaty lambda body expressions
@@ -608,6 +617,7 @@ Object* eval_list(Object *expressions, Object *environment) {
 Object* eval_many(Object *exps, Object *env) {
   if (exps == nil)
     return nil;
+  
   for (;;){
     if (cdr(exps) == nil)
       return eval(car(exps), env);
