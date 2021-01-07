@@ -82,12 +82,13 @@ typedef struct sObject
 
 
 /*** Global Constants***/
-#define STACK_MAX 256
-#define MAX_OBJECTS 200
+#define STACK_MAX 2048
+#define MAX_OBJECTS 100
 struct {
     Object* first; // Tail of free list
     unsigned int allocated; // currently allocated objects
     unsigned int stack_len;
+    Object** framepointer;
     Object* stack[STACK_MAX]; // Roots for garbage Collector
 } GC;
 
@@ -147,9 +148,11 @@ Object *all_symbols,  // Global symbol table
 // Is symbol NIL
 #define isnil(X) ((X) == nil)
 
+//Forward declaration
+void collect_garbage();
+
 // Generate a next Cons cell or linked list from
 // list of Objects
-
 #ifdef DEBUG_SHOW_ALLOC
 Object* omake_function(enum ObjType type, int count, ...)
 #else 
@@ -160,15 +163,21 @@ Object* omake(enum ObjType type, int count, ...)
   Object *result;
   va_list ap;
 
+  if (GC.allocated > MAX_OBJECTS) {
+    collect_garbage();
+  }
+
   // varags iterations
-  va_start(ap, count);
-  // Alocate space for |Object_1|&Object_2|&Object_3|...|&Object_count
+  // Alocate space for [|Object{Value_1}|Value_2|Value_3....|Value_count|]
   result = (Object*) malloc(sizeof(Object) + count * sizeof(Value));
+  //
   result->type = type;
   result->marked = 0;
   // Grow free list by appending this to head
   result->next = GC.first;
   GC.first = result;
+  GC.allocated++;
+  va_start(ap, count);
   switch (type) {
     case INT:
       result->data[0].number = va_arg(ap, int);
@@ -381,7 +390,7 @@ void sweep() {
 /**
  * Run garbage collection proccess
 */
-void collect_garabage(){
+void collect_garbage(){
     printf("\033[0;32mEntering Garbage Collection!\033[0m\n");
     markAll();
     sweep();
@@ -794,7 +803,7 @@ int main() {
   {
     writeobj(stdout, eval(readobj(), top_env));
     printf("\n");
-    collect_garabage();
+    // collect_garabage();
     freeStack();
   }
   return 0;
